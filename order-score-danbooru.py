@@ -2,7 +2,7 @@ import multiprocessing
 
 import requests
 import shutil
-
+import os
 
 url = "https://danbooru.donmai.us/posts.json?limit=200&tags=order%3Ascore"
 dir = "./order-score/"
@@ -14,7 +14,7 @@ headers = {
 r = []
 posturl = "https://danbooru.donmai.us/posts/"
 def get_request(page):
-    url_paged = url + "&page=2"
+    url_paged = url + "&page=" + str(page)
     resp = requests.get(url=url_paged)
 
     data = resp.json()
@@ -45,9 +45,6 @@ def find_cdn_url_from_resp(respc):
         url += respc[i]
 
     return None
-    
-
-
 
 def get_cdn_url(id):
     url = posturl + str(id)
@@ -77,29 +74,31 @@ def save_image(id):
     ext = find_ext(url)
     if(ext == None):
         return 
+    sdir = dir + str(id % 100) + "/"
     name = str(id) + ext
+    if(os.path.exists(sdir + name)):
+        print(name + " Exists")
     res = requests.get(url=url,headers=headers, stream=True)
-    print("Retrieving from " + url)
+    
+    #print("Retrieving from " + url)
     if res.status_code == 200:
-        with open(dir + name,'wb') as f:
+        with open(sdir + name,'wb') as f:
             shutil.copyfileobj(res.raw, f)
-        print('Image sucessfully Downloaded: ', name)
+        print('File sucessfully Downloaded: ', name)
     else:
-        print('Image Couldn\'t be retrieved, Error:')
+        print('File Couldn\'t be retrieved, Error:')
         print(res)
 
 
+def mkdir():
+    for i in range(100):
+        os.mkdir(dir + str(i))
 
-
-
-
-
-    
 
 if __name__ ==  "__main__":
 
     processes = 50
-    page_range = range(0,100)
+    page_range = range(1,100)
 
     
 
@@ -110,5 +109,8 @@ if __name__ ==  "__main__":
 
 
         print("Starting downloads for page " + str(i))
+        print("\n\n")
         pool.map(save_image, resp)
+        print("\n\n")
+
         print("Finished downloading page " + str(i))
