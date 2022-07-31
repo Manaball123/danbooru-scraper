@@ -4,6 +4,20 @@ import requests
 import shutil
 import os
 
+
+
+#ARGS HERE
+
+start = 1
+stop = 100
+processes = 50
+
+
+
+
+
+
+
 url = "https://danbooru.donmai.us/posts.json?limit=200&tags=order%3Ascore"
 dir = "./order-score/"
 
@@ -11,7 +25,7 @@ cf = r"pKC9inHoylW0t4Ip4QecCiw7P6g0xmGWXjjRWWJNiKY-1653062338-0-150"
 headers = {
         "User-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0",
 }
-r = []
+
 posturl = "https://danbooru.donmai.us/posts/"
 def get_request(page):
     url_paged = url + "&page=" + str(page)
@@ -97,8 +111,8 @@ def mkdir():
 
 if __name__ ==  "__main__":
 
-    processes = 50
-    page_range = range(1,100)
+    
+    page_range = range(start,stop)
 
     
 
