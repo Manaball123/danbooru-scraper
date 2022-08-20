@@ -1,4 +1,4 @@
-# danbooru-sort-by-score-thingy
+# danbooru image scraper
  download anime porn off of the internet automatically 
 
 # why
@@ -8,3 +8,7 @@
 # i
 # doing
 # this
+
+
+edit ur search shit in the code idk
+
