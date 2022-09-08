@@ -1,4 +1,4 @@
-import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 import shutil
@@ -9,8 +9,8 @@ import os
 #ARGS HERE
 
 start = 1
-stop = 100
-processes = 50
+stop = 2
+threads = 128
 
 
 
@@ -19,7 +19,7 @@ processes = 50
 
 
 url = "https://danbooru.donmai.us/posts.json?limit=200&tags=order%3Ascore"
-dir = "./order-score/"
+dir = "./anime-porn/"
 
 cf = r"pKC9inHoylW0t4Ip4QecCiw7P6g0xmGWXjjRWWJNiKY-1653062338-0-150"
 headers = {
@@ -108,15 +108,21 @@ def mkdir():
     for i in range(100):
         os.mkdir(dir + str(i))
 
+#makes the anime porn folder
+def mkrootdir():
+    if(os.path.isdir(dir)):
+        os.mkdir(dir)
+
+
 
 if __name__ ==  "__main__":
 
-    
+    mkrootdir()
     page_range = range(start,stop)
 
     
 
-    pool = multiprocessing.Pool(processes)
+    pool = ThreadPoolExecutor(max_workers = threads)
     
     for i in page_range:
         resp = get_request(i)
