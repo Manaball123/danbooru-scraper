@@ -1,5 +1,4 @@
 from multiprocessing.pool import ThreadPool
-from threading import Thread
 import requests
 import shutil
 import os
@@ -9,7 +8,7 @@ import os
 #ARGS HERE
 
 start = 1
-stop = 10
+stop = 50
 threads = 128
 
 
