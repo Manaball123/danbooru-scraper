@@ -1,6 +1,7 @@
-import imp
+
 from multiprocessing.pool import ThreadPool
 import multiprocessing
+from time import sleep
 import requests
 import shutil
 import os
@@ -12,8 +13,9 @@ import os
 start = 1
 stop = 50
 threads = 128
+max_tasks = threads * 2
 
-
+requests_check_cooldown = 5.0
 
 
 
@@ -38,6 +40,7 @@ proxy = {
 
 posturl = "https://danbooru.donmai.us/posts/"
 def get_request(page):
+    print("Requesting for tasks...")
     url_paged = url + "&page=" + str(page)
 
     resp = requests.get(url = url_paged)
@@ -45,6 +48,7 @@ def get_request(page):
     data = resp.json()
     
     res = []
+    
     for i in range(len(data)):
         
         if(data[i].__contains__("id") and data[i].__contains__("large_file_url")):
@@ -53,10 +57,9 @@ def get_request(page):
                 "url" : data[i]["large_file_url"]
             })
         
-        
             
     
-
+    print("New tasks requested")
     return res
     
 
@@ -78,7 +81,7 @@ def find_ext(str):
 
 def save_image(task):
 
-
+    #print("hello")
     ext = find_ext(task["url"])
     if(ext == None):
         return 
@@ -112,6 +115,36 @@ def mkrootdir():
 
 
 
+#subprocesses here
+
+
+def requests_subprocess(shared_queue, page_range, completion_mark):
+    
+    for i in page_range:
+        tasks_to_push = get_request(i)
+        for j in range(len(tasks_to_push)):
+            shared_queue.put(tasks_to_push[j])
+    
+    #mark completion when finished executing
+    completion_mark.value = 1
+    
+
+
+def downloads_subprocess(shared_queue, completion_mark):
+    pool = ThreadPool(processes = threads)
+    
+
+    while(completion_mark.value == 0 or shared_queue.empty() == False):
+        ctask = shared_queue.get()
+        print("Exectuting task: " + str(ctask["tid"]))
+        pool.apply_async(save_image, args = (ctask))
+
+    pool.close()
+    pool.join()
+    
+
+
+
 if __name__ ==  "__main__":
 
     mkrootdir()
@@ -119,16 +152,16 @@ if __name__ ==  "__main__":
     page_range = range(start,stop)
 
     
+    comp_mark = multiprocessing.Value("i", 0)
 
-    pool = ThreadPool(processes = threads)
+    queue = multiprocessing.Queue(maxsize=max_tasks)
+
+    req_p = multiprocessing.Process(target = requests_subprocess, args = (queue, page_range, comp_mark))
+    downl_p = multiprocessing.Process(target = downloads_subprocess, args = (queue, comp_mark))
     
-    for i in page_range:
-        tasks = get_request(i)
+    req_p.start()
+    downl_p.start()
 
+    req_p.join()
+    downl_p.join()
 
-        print("Starting downloads for page " + str(i))
-        print("\n\n")
-        pool.map(save_image, tasks)
-        print("\n\n")
-
-        print("Finished downloading page " + str(i))
