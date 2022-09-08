@@ -1,4 +1,4 @@
-import imp
+
 from multiprocessing.pool import ThreadPool
 import multiprocessing
 import requests
