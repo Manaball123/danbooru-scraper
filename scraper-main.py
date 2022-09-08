@@ -1,5 +1,5 @@
-from concurrent.futures import ThreadPoolExecutor
-
+from multiprocessing.pool import ThreadPool
+from threading import Thread
 import requests
 import shutil
 import os
@@ -9,7 +9,7 @@ import os
 #ARGS HERE
 
 start = 1
-stop = 2
+stop = 10
 threads = 128
 
 
@@ -38,6 +38,7 @@ proxy = {
 posturl = "https://danbooru.donmai.us/posts/"
 def get_request(page):
     url_paged = url + "&page=" + str(page)
+
     resp = requests.get(url = url_paged)
 
     data = resp.json()
@@ -82,6 +83,7 @@ def save_image(task):
     name = str(task["tid"]) + ext
     if(os.path.exists(sdir + name)):
         print(name + " Exists")
+    #print("Downloading " + name)
     res = requests.get(url=task["url"],headers=headers, stream=True)
     
     #print("Retrieving from " + url)
@@ -96,7 +98,9 @@ def save_image(task):
 
 def mkdir():
     for i in range(100):
-        os.mkdir(dir + str(i))
+        cdir = dir + str(i)
+        if(not os.path.isdir(cdir)):
+            os.mkdir(cdir)
 
 #makes the anime porn folder
 def mkrootdir():
@@ -108,11 +112,12 @@ def mkrootdir():
 if __name__ ==  "__main__":
 
     mkrootdir()
+    mkdir()
     page_range = range(start,stop)
 
     
 
-    pool = ThreadPoolExecutor(max_workers = threads)
+    pool = ThreadPool(processes = threads)
     
     for i in page_range:
         tasks = get_request(i)
