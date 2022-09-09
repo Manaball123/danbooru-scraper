@@ -13,8 +13,9 @@ import os
 
 start = 1
 stop = 50
-threads = 128
-max_tasks = threads * 2
+threads_per_process = 32
+processes = 16
+max_tasks = threads_per_process * processes * 2
 
 requests_check_cooldown = 5.0
 
@@ -54,6 +55,20 @@ class ConcurrentThreadPool:
         
         for i in range(len(self.threads)):
             self.threads[i].join()
+
+class ConcurrentProcessPool:
+    def __init__(self, process_n,task_fn,args):
+        self.processes = []
+        for i in range(process_n):
+            self.processes.append(multiprocessing.Process(target = task_fn, args = args))
+        
+    def execute(self):
+        for i in range(len(self.processes)):
+            self.processes[i].start()
+        
+        
+        for i in range(len(self.processes)):
+            self.processes[i].join()
 
 
 def get_request(page):
@@ -177,7 +192,7 @@ def downloads_subprocess(shared_queue, completion_mark):
         "completion" : completion_mark
     }
     pool_fn = partial(downloads_thread, shared_obj)
-    pool = ConcurrentThreadPool(threads, pool_fn, ())
+    pool = ConcurrentThreadPool(threads_per_process, pool_fn, ())
 
     pool.execute()
         
@@ -198,11 +213,17 @@ if __name__ ==  "__main__":
     queue = multiprocessing.Queue(maxsize=max_tasks)
 
     req_p = multiprocessing.Process(target = requests_subprocess, args = (queue, page_range, comp_mark))
-    downl_p = multiprocessing.Process(target = downloads_subprocess, args = (queue, comp_mark))
+
+
+    downloads_pool = ConcurrentProcessPool(processes, downloads_subprocess, args = (queue, comp_mark))
+
+
+    #it = range(0,processes)
+    
     
     req_p.start()
-    downl_p.start()
+    downloads_pool.execute()
 
     req_p.join()
-    downl_p.join()
+    
 
