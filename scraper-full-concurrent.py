@@ -1,7 +1,8 @@
 
-from multiprocessing.pool import ThreadPool
 import multiprocessing
-from time import sleep
+import threading
+from functools import partial
+from xml.sax.handler import feature_external_ges
 import requests
 import shutil
 import os
@@ -39,6 +40,22 @@ proxy = {
 }
 
 posturl = "https://danbooru.donmai.us/posts/"
+
+class ConcurrentThreadPool:
+    def __init__(self, threads_n,task_fn,args):
+        self.threads = []
+        for i in range(threads_n):
+            self.threads.append(threading.Thread(target = task_fn, args = args))
+        
+    def execute(self):
+        for i in range(len(self.threads)):
+            self.threads[i].start()
+        
+        
+        for i in range(len(self.threads)):
+            self.threads[i].join()
+
+
 def get_request(page):
     print("Requesting for tasks...")
     url_paged = url + "&page=" + str(page)
@@ -89,18 +106,27 @@ def save_image(task):
     name = str(task["tid"]) + ext
     if(os.path.exists(sdir + name)):
         print(name + " Exists")
-        return
+        return True
     #print("Downloading " + name)
-    res = requests.get(url=task["url"],headers=headers, stream=True)
-    
-    #print("Retrieving from " + url)
-    if res.status_code == 200:
-        with open(sdir + name,'wb') as f:
-            shutil.copyfileobj(res.raw, f)
-        print('File sucessfully Downloaded: ', name)
-    else:
-        print('File Couldn\'t be retrieved, Error:')
-        print(res)
+    try:
+        res = requests.get(url=task["url"],headers=headers, stream=True)
+        
+        #print("Retrieving from " + url)
+        if res.status_code == 200:
+            with open(sdir + name,'wb') as f:
+                shutil.copyfileobj(res.raw, f)
+            print('File sucessfully Downloaded: ', name)
+            del res.raw
+            return True
+        else:
+            print('File Couldn\'t be retrieved, Error:')
+            print(res)
+            return False
+
+    except:
+
+        print("Process aborted as an exception is thrown.")
+        return False
 
 
 def mkdir():
@@ -114,6 +140,18 @@ def mkrootdir():
     if(not os.path.isdir("anime-porn")):
         os.mkdir("anime-porn")
 
+def downloads_thread(shared_obj):
+    
+    while(shared_obj["completion"].value == 0 or shared_obj["queue"].empty() == False):
+        ctask = shared_obj["queue"].get()
+        print("Exectuting task: " + str(ctask["tid"]))
+        #retry if failed
+        while(not save_image(ctask)):
+            print("Error is thrown while downloading. Retrying...")
+    
+    print("Download complete. Closing thread..")
+
+        
 
 
 #subprocesses here
@@ -132,16 +170,18 @@ def requests_subprocess(shared_queue, page_range, completion_mark):
 
 
 def downloads_subprocess(shared_queue, completion_mark):
-    pool = ThreadPool(processes = threads)
+    #pool = ThreadPool(processes = threads)
     
+    shared_obj = {
+        "queue" : shared_queue,
+        "completion" : completion_mark
+    }
+    pool_fn = partial(downloads_thread, shared_obj)
+    pool = ConcurrentThreadPool(threads, pool_fn, ())
 
-    while(completion_mark.value == 0 or shared_queue.empty() == False):
-        ctask = shared_queue.get()
-        print("Exectuting task: " + str(ctask["tid"]))
-        pool.apply_async(save_image, args = (ctask))
-
-    pool.close()
-    pool.join()
+    pool.execute()
+        
+        
     
 
 
