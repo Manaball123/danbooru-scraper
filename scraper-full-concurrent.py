@@ -120,12 +120,13 @@ def save_image(task):
     sdir = dir + str(task["tid"] % 100) + "/"
     name = str(task["tid"]) + ext
     if(os.path.exists(sdir + name)):
-        print(name + " Exists")
+        print(name + " exists, aborting download")
+
         return True
     #print("Downloading " + name)
     try:
         res = requests.get(url=task["url"],headers=headers, stream=True)
-        
+        print("Downloading " + name)
         #print("Retrieving from " + url)
         if res.status_code == 200:
             with open(sdir + name,'wb') as f:
@@ -139,8 +140,8 @@ def save_image(task):
             return False
 
     except:
-
-        print("Process aborted as an exception is thrown.")
+        
+        print("Downloading of" + name + "aborted as an exception is thrown.")
         return False
 
 
@@ -159,7 +160,7 @@ def downloads_thread(shared_obj):
     
     while(shared_obj["completion"].value == 0 or shared_obj["queue"].empty() == False):
         ctask = shared_obj["queue"].get()
-        print("Exectuting task: " + str(ctask["tid"]))
+        #print("Exectuting task: " + str(ctask["tid"]))
         #retry if failed
         while(not save_image(ctask)):
             print("Error is thrown while downloading. Retrying...")
