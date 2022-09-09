@@ -75,24 +75,27 @@ def get_request(page):
     print("Requesting for tasks...")
     url_paged = url + "&page=" + str(page)
 
-    resp = requests.get(url = url_paged)
+    try:
+        resp = requests.get(url = url_paged)
 
-    data = resp.json()
-    
-    res = []
-    
-    for i in range(len(data)):
+        data = resp.json()
         
-        if(data[i].__contains__("id") and data[i].__contains__("large_file_url")):
-            res.append({
-                "tid" : data[i]["id"],
-                "url" : data[i]["large_file_url"]
-            })
+        res = []
         
+        for i in range(len(data)):
             
-    
-    print("New tasks requested")
-    return res
+            if(data[i].__contains__("id") and data[i].__contains__("large_file_url")):
+                res.append({
+                    "tid" : data[i]["id"],
+                    "url" : data[i]["large_file_url"]
+                })
+            
+                
+        
+        print("New tasks requested.")
+        return res
+    except:
+        print("Tasks request failed. Retrying...")
     
 
     
@@ -132,7 +135,7 @@ def save_image(task):
             with open(sdir + name,'wb') as f:
                 shutil.copyfileobj(res.raw, f)
             print('File sucessfully Downloaded: ', name)
-            del res.raw
+            del res
             return True
         else:
             print('File Couldn\'t be retrieved, Error:')
