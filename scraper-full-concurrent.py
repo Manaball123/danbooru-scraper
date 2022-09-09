@@ -89,6 +89,7 @@ def save_image(task):
     name = str(task["tid"]) + ext
     if(os.path.exists(sdir + name)):
         print(name + " Exists")
+        return
     #print("Downloading " + name)
     res = requests.get(url=task["url"],headers=headers, stream=True)
     
