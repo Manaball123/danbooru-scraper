@@ -1,4 +1,5 @@
 
+import hashlib
 import multiprocessing
 import threading
 from functools import partial
@@ -11,10 +12,15 @@ import os
 
 #ARGS HERE
 
+
+
+
 start = 1
 stop = 50
 threads_per_process = 32
 processes = 16
+
+do_checksum = True
 max_tasks = threads_per_process * processes * 2
 
 requests_check_cooldown = 5.0
@@ -25,6 +31,7 @@ requests_check_cooldown = 5.0
 
 url = "https://danbooru.donmai.us/posts.json?limit=200&tags=order%3Ascore"
 dir = "./anime-porn/"
+
 
 cf = r"pKC9inHoylW0t4Ip4QecCiw7P6g0xmGWXjjRWWJNiKY-1653062338-0-150"
 headers = {
@@ -70,6 +77,27 @@ class ConcurrentProcessPool:
         for i in range(len(self.processes)):
             self.processes[i].join()
 
+#md5 hash check, returns true if both are the same, false otherwise
+def check_hash(fname, hash):
+    fhash = ""
+    with open(fname, "rb") as f:
+        data = f.read()
+        fhash = hashlib.md5(data).hexdigest()
+        
+    if(hash == fhash):
+        return True
+    else: 
+        return False
+    
+
+
+
+def get_cdn_url(data):
+    if(data.__contains__("large_file_url")):
+        return data["large_file_url"]
+    elif(data.__contains__("file_url")):
+        return data["file_url"]
+
 
 def get_request(page):
     print("Requesting for tasks...")
@@ -84,14 +112,22 @@ def get_request(page):
         
         for i in range(len(data)):
             
-            if(data[i].__contains__("id") and data[i].__contains__("large_file_url")):
-                res.append({
-                    "tid" : data[i]["id"],
-                    "url" : data[i]["large_file_url"]
-                })
-            
+            if(data[i].__contains__("id")):
+                url = get_cdn_url(data[i])
                 
-        
+                if(url != None):
+                    task = {
+                        "tid" : data[i]["id"],
+                        "url" : url
+                    }
+                
+                    if(do_checksum and data[i].__contains__("md5")):
+                        task["md5"] = data[i]["md5"]
+                        res.append(task)
+                    else:
+                        res.append(task)
+
+
         print("New tasks requested.")
         return res
     except:
@@ -122,10 +158,38 @@ def save_image(task):
         return 
     sdir = dir + str(task["tid"] % 100) + "/"
     name = str(task["tid"]) + ext
-    if(os.path.exists(sdir + name)):
-        print(name + " exists, aborting download")
+    fulldir = sdir + name
 
+
+    download = False
+
+    if(os.path.exists(fulldir)):
+
+        if(do_checksum):
+            #if checksum is incomplete, redownload
+            if(not check_hash(fulldir, task["md5"])):
+                print(name + " exists but was not fully downloaded, redownloading...")
+                download = True
+            
+            #if exist and checksum is complete
+            else:
+                download = False
+
+        #if exist and not doing checksum
+        else:
+            download = False
+
+    #if file does not exist
+    else:
+        download = True
+
+
+    if(not download):
+        #if not doing checksum OR checksum is complete, abort
+        print(name + " exists, aborting download")
         return True
+
+
     #print("Downloading " + name)
     try:
         res = requests.get(url=task["url"],headers=headers, stream=True)
