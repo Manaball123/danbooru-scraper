@@ -172,7 +172,7 @@ def get_request(page):
             if(strict_md5 and (not data[i].__contains__("md5"))):
                 continue
             
-            
+            #not going to preform const time lookup here
 
 
         print("REQUESTS PROCESS: New tasks requested.")
@@ -186,11 +186,7 @@ def get_request(page):
 
 def save_image(task : Task):
 
-    #check if task is valid
-    task.initialize_props()
-
-    if(task.is_valid()):
-        res.append(task)
+    
 
     try:
         res = requests.get(url = task.url ,headers=headers, stream=True)
@@ -241,6 +237,12 @@ def downloads_thread(shared_obj):
     #only stop if both completion set to 1 AND queue is empty
     while(shared_obj["completion"].value == 0 or shared_obj["queue"].empty() == False):
         ctask = shared_obj["queue"].get()
+        #check if task is valid
+        ctask.initialize_props()
+        #if task is invalid, dont start download
+        if(not ctask.is_valid()):
+            del ctask
+            continue
         #print("Exectuting task: " + str(ctask["tid"]))
         #retry if failed
         while(not save_image(ctask)):
