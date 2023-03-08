@@ -172,11 +172,7 @@ def get_request(page):
             if(strict_md5 and (not data[i].__contains__("md5"))):
                 continue
             
-            task.initialize_props()
-
-            if(task.is_valid()):
-                res.append(task)
-
+            
 
 
         print("REQUESTS PROCESS: New tasks requested.")
@@ -187,8 +183,14 @@ def get_request(page):
     
 
 
-#all tasks here should be valid
+
 def save_image(task : Task):
+
+    #check if task is valid
+    task.initialize_props()
+
+    if(task.is_valid()):
+        res.append(task)
 
     try:
         res = requests.get(url = task.url ,headers=headers, stream=True)
