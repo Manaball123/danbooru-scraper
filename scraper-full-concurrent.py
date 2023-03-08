@@ -77,8 +77,12 @@ proxy = {
 
 
 
-
-
+class Task:
+    def __init__(self, url, id, path_full = None) -> None:
+        self.url = url
+        self.path = path_full
+        self.id = id
+        self.md5 = None
 
 
 
@@ -115,23 +119,22 @@ def get_request(page):
         data = resp.json()
         
         res = []
-        
         for i in range(len(data)):
             
-            if(data[i].__contains__("id")):
-                url = get_cdn_url(data[i])
-                
-                if(url != None):
-                    task = {
-                        "tid" : data[i]["id"],
-                        "url" : url
-                    }
-                
-                    if(do_checksum and data[i].__contains__("md5")):
-                        task["md5"] = data[i]["md5"]
-                        res.append(task)
-                    else:
-                        res.append(task)
+            if(not data[i].__contains__("id")):
+                continue
+
+            url = get_cdn_url(data[i])
+
+            if(url == None):
+                continue
+
+            task : Task = Task(url, data[i]["id"])
+            
+            if(do_checksum and data[i].__contains__("md5")):
+                task.md5 = data[i]["md5"]
+                res.append(task)
+
 
 
         print("New tasks requested.")
@@ -141,30 +144,32 @@ def get_request(page):
         return []
     
 
-    
+#input: file name
+#returns extention of file
+def find_ext(fname : str):
 
-def find_ext(str):
-
-    strlen = len(str)
+    strlen = len(fname)
     #print(str)
     i = strlen - 1
     while i > 0:
-        if(str[i] == "."):
+        if(fname[i] == "."):
 
-            return str[i:]
+            return fname[i:]
         else:
             i -= 1
     return None
 
 
-def save_image(task):
+def save_image(task : Task):
 
 
-    ext = find_ext(task["url"])
+    ext = find_ext(task.url)
     if(ext == None):
+        print("File does not have an extention. Aborting task.")
         return 
-    sdir = dir + str(task["tid"] % folder_split_count) + "/"
-    name = str(task["tid"]) + ext
+    
+    sdir = dir + str(task.id % folder_split_count) + "/"
+    name = str(task.id) + ext
     fulldir = sdir + name
 
 
@@ -266,6 +271,7 @@ def downloads_subprocess(shared_queue, completion_mark):
         "queue" : shared_queue,
         "completion" : completion_mark
     }
+
     pool_fn = partial(downloads_thread, shared_obj)
     pool = ConcurrentThreadPool(threads_per_process, pool_fn, ())
 
@@ -312,13 +318,13 @@ if __name__ ==  "__main__":
     
     comp_mark = multiprocessing.Value("i", 0)
 
-    queue = multiprocessing.Queue(maxsize=max_tasks)
+    queue = multiprocessing.Queue(maxsize = max_tasks)
 
     req_p = multiprocessing.Process(target = requests_subprocess, args = (queue, page_range, comp_mark))
 
 
     downloads_pool = ConcurrentProcessPool(processes, downloads_subprocess, args = (queue, comp_mark))
-
+    
 
     #it = range(0,processes)
     
