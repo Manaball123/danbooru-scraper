@@ -220,7 +220,7 @@ def save_image(task : Task):
 #makes subfolders of extension
 def mkdir():
     for k in known_extentions:
-
+        os.mkdir(dir + k)
         for i in range(folder_split_count):
             cdir = dir + k + "/" + str(i)
             if(not os.path.isdir(cdir)):
