@@ -9,6 +9,7 @@ import os
         
 import multiprocessing
 import threading
+import time
 
 
 
@@ -36,6 +37,8 @@ requests_check_cooldown = 5.0
 dirname = "anime-porn"
 
 folder_split_count = 100
+
+timeout_time = 3
 
 
 baseurl = "https://danbooru.donmai.us/posts.json?"
@@ -92,11 +95,11 @@ proxy = {
 
 
 class Task:
-    def __init__(self, url : str, id : int) -> None:
+    def __init__(self, url : str, id : int, ext : str) -> None:
         self.url = url
         self.id = id
         self.md5 = None
-        self.extention : str = utils.find_ext(url)
+        self.extention : str = ext
         
         
     #only do this after task arrives at destination cuz large size prob
@@ -150,36 +153,41 @@ def get_request(page):
 
     try:
         resp = requests.get(url = url_paged)
-
-        data = resp.json()
+        if(resp.status_code != 200):
+            raise("L request status is not 200")
         
-        res = []
-        for i in range(len(data)):
-            #if no id
-            if(not data[i].__contains__("id")):
-                continue
-            #if no cdn url
-            url = utils.get_cdn_url(data[i])
+        data = resp.json()
+    except:
+        print("REQUESTS PROCESS: Tasks request failed. Retrying after timeout of " + str(timeout_time) + "s...")
+        time.sleep(timeout_time)
+        
+        return []
+        
+    res = []
 
-            if(url == None):
-                continue
+    for dat in data:
+        #if no id
+        if(not dat.__contains__("id")):
+            continue
+        #if no cdn url
+        url = utils.get_cdn_url(dat)
 
-            task : Task = Task(url, data[i]["id"])
-            #optional md5 checksum
-            if(check_md5 and data[i].__contains__("md5")):
-                task.md5 = data[i]["md5"]
-            #if no md5 in strict mode
-            if(strict_md5 and (not data[i].__contains__("md5"))):
-                continue
+        if(url == None):
+            continue
+
+        task : Task = Task(url, dat["id"], dat["ext"])
+        #optional md5 checksum
+        if(check_md5 and dat.__contains__("md5")):
+            task.md5 = dat["md5"]
+        #if no md5 in strict mode
+        if(strict_md5 and (not dat.__contains__("md5"))):
+            continue
             
-            #not going to preform const time lookup here
 
 
         print("REQUESTS PROCESS: New tasks requested.")
         return res
-    except:
-        print("REQUESTS PROCESS: Tasks request failed. Retrying...")
-        return []
+
     
 
 
@@ -193,9 +201,11 @@ def save_image(task : Task):
         print("Downloading " + task.fname)
 
         if res.status_code == 200:
-            
+            #note: may have unexpected behavior if terminated before eof reached
             with open(task.path,'wb') as f:
                 shutil.copyfileobj(res.raw, f)
+            
+            
             if(strict_md5):
                 if(not utils.check_hash(task.path, task.md5)):
                     print("File hash incorrect. Redownloading...")
@@ -220,7 +230,8 @@ def save_image(task : Task):
 #makes subfolders of extension
 def mkdir():
     for k in known_extentions:
-        os.mkdir(dir + k)
+        if(not os.path.isdir(dir + k)):
+            os.mkdir(dir + k)
         for i in range(folder_split_count):
             cdir = dir + k + "/" + str(i)
             if(not os.path.isdir(cdir)):
