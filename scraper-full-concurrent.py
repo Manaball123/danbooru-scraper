@@ -3,11 +3,13 @@ import hashlib
 
 from functools import partial
 import requests
+import utils
 import shutil
 import os
         
 import multiprocessing
 import threading
+
 
 
 
@@ -24,7 +26,9 @@ stop = 50
 threads_per_process = 32
 processes = 16
 
-do_checksum = True
+check_md5 = True
+strict_md5 = True
+known_only : bool = True
 max_tasks = threads_per_process * processes * 2
 
 requests_check_cooldown = 5.0
@@ -42,8 +46,19 @@ baseurl = "https://danbooru.donmai.us/posts.json?"
 page_lim = 200
 tags = [
     tag_score_order,
-    "sex"
+    "rating%3Aexplicit",
+
+    #lmao
+    #"sex"
 ]
+
+#constant lookup time
+known_extentions = {
+    ".png" : True,
+    ".jpg" : True,
+    ".gif" : True, 
+    ".mp4" : True
+}
 
 def get_tags(tags):
     s = tags[0]
@@ -54,9 +69,9 @@ def get_tags(tags):
 
 
 qinfo = "limit=" + str(page_lim) + "&tags=" + get_tags(tags)
-url = baseurl + qinfo
+url : str = baseurl + qinfo
 
-dir = "./" + dirname + "/"
+dir : str = "./" + dirname + "/"
 
 
 
@@ -76,40 +91,60 @@ proxy = {
 }
 
 
-
 class Task:
-    def __init__(self, url, id, path_full = None) -> None:
+    def __init__(self, url : str, id : int) -> None:
         self.url = url
-        self.path = path_full
         self.id = id
         self.md5 = None
-
-
-
-#md5 hash check, returns true if both are the same, false otherwise
-def check_hash(fname, hash):
-    fhash = ""
-    with open(fname, "rb") as f:
-        data = f.read()
-        fhash = hashlib.md5(data).hexdigest()
+        self.extention : str = utils.find_ext(url)
         
-    if(hash == fhash):
-        return True
-    else: 
-        return False
+        
+    #only do this after task arrives at destination cuz large size prob
+    #nvm i dont actually care
+    def initialize_props(self) -> None:
+        global dir
+
+        #file name
+        #42069666.png
+        self.fname : str = str(id) + self.extention
+
+        #relative path
+        #./dirname/.png/66/42069666.png
+        self.path : str = dir +                         \
+            self.extention + "/"                        \
+            + str(self.id % folder_split_count) + "/"   \
+            + self.fname
     
+    def is_valid(self) -> bool:
+        global known_extentions
+        if(known_only):
+            #if either false or none type
+            if(not known_extentions[self.extention]):
+                return False
+        
+        #if file does not exist, download
+        if(not os.path.exists(self.path)):
+            return True
+        #if not doing checksum
+        #assume that the file is complete
+        if(not check_md5):
+            return False
+        #if checking md5
+        #if checksum is incomplete, redownload
+        if(not utils.check_hash(self.path, self.md5)):
+            print(self.fname + " exists but was not fully downloaded, redownloading...")
+            return True
+        #if checksum is complete
+        print(self.fname + " exists, aborting download")
+        return False
 
+        
 
-
-def get_cdn_url(data):
-    if(data.__contains__("large_file_url")):
-        return data["large_file_url"]
-    elif(data.__contains__("file_url")):
-        return data["file_url"]
 
 
 def get_request(page):
     global url
+    global known_extentions
     print("Requesting for tasks...")
     url_paged = url + "&page=" + str(page)
 
@@ -120,129 +155,96 @@ def get_request(page):
         
         res = []
         for i in range(len(data)):
-            
+            #if no id
             if(not data[i].__contains__("id")):
                 continue
-
-            url = get_cdn_url(data[i])
+            #if no cdn url
+            url = utils.get_cdn_url(data[i])
 
             if(url == None):
                 continue
 
             task : Task = Task(url, data[i]["id"])
-            
-            if(do_checksum and data[i].__contains__("md5")):
+            #optional md5 checksum
+            if(check_md5 and data[i].__contains__("md5")):
                 task.md5 = data[i]["md5"]
+            #if no md5 in strict mode
+            if(strict_md5 and (not data[i].__contains__("md5"))):
+                continue
+            
+            task.initialize_props()
+
+            if(task.is_valid()):
                 res.append(task)
 
 
 
-        print("New tasks requested.")
+        print("REQUESTS PROCESS: New tasks requested.")
         return res
     except:
-        print("Tasks request failed. Retrying...")
+        print("REQUESTS PROCESS: Tasks request failed. Retrying...")
         return []
     
 
-#input: file name
-#returns extention of file
-def find_ext(fname : str):
 
-    strlen = len(fname)
-    #print(str)
-    i = strlen - 1
-    while i > 0:
-        if(fname[i] == "."):
-
-            return fname[i:]
-        else:
-            i -= 1
-    return None
-
-
+#all tasks here should be valid
 def save_image(task : Task):
 
-
-    ext = find_ext(task.url)
-    if(ext == None):
-        print("File does not have an extention. Aborting task.")
-        return 
-    
-    sdir = dir + str(task.id % folder_split_count) + "/"
-    name = str(task.id) + ext
-    fulldir = sdir + name
-
-
-    download = False
-
-    if(os.path.exists(fulldir)):
-
-        if(do_checksum):
-            #if checksum is incomplete, redownload
-            if(not check_hash(fulldir, task["md5"])):
-                print(name + " exists but was not fully downloaded, redownloading...")
-                download = True
-            
-            #if exist and checksum is complete
-            else:
-                download = False
-
-        #if exist and not doing checksum
-        else:
-            download = False
-
-    #if file does not exist
-    else:
-        download = True
-
-
-    if(not download):
-        #if not doing checksum OR checksum is complete, abort
-        print(name + " exists, aborting download")
-        return True
-
-
-    #print("Downloading " + name)
     try:
-        res = requests.get(url=task["url"],headers=headers, stream=True)
-        print("Downloading " + name)
-        #print("Retrieving from " + url)
+        res = requests.get(url = task.url ,headers=headers, stream=True)
+        print("Downloading " + task.fname)
+
         if res.status_code == 200:
-            with open(sdir + name,'wb') as f:
+            
+            with open(task.path,'wb') as f:
                 shutil.copyfileobj(res.raw, f)
-            print('File sucessfully Downloaded: ', name)
+            if(strict_md5):
+                if(not utils.check_hash(task.path, task.md5)):
+                    print("File hash incorrect. Redownloading...")
+                    del res
+                    return False
+            
+            print('File sucessfully Downloaded: ', task.fname)
             del res
             return True
         else:
             print('File Couldn\'t be retrieved, Error:')
             print(res)
+            del res
             return False
 
     except:
         
-        print("Downloading of" + name + "aborted as an exception is thrown.")
+        print("Downloading of" + task.fname + "aborted as an exception is thrown.")
+        del res
         return False
 
-
+#makes subfolders of extension
 def mkdir():
-    for i in range(100):
-        cdir = dir + str(i)
-        if(not os.path.isdir(cdir)):
-            os.mkdir(cdir)
+    for k in known_extentions:
+
+        for i in range(folder_split_count):
+            cdir = dir + k + "/" + str(i)
+            if(not os.path.isdir(cdir)):
+                os.mkdir(cdir)
 
 #makes the anime porn folder
 def mkrootdir():
     if(not os.path.isdir(dirname)):
         os.mkdir(dirname)
 
+
 def downloads_thread(shared_obj):
     
+    #only stop if both completion set to 1 AND queue is empty
     while(shared_obj["completion"].value == 0 or shared_obj["queue"].empty() == False):
         ctask = shared_obj["queue"].get()
         #print("Exectuting task: " + str(ctask["tid"]))
         #retry if failed
         while(not save_image(ctask)):
             print("Error is thrown while downloading. Retrying...")
+        
+        del ctask
     
     print("Download complete. Closing thread..")
 
@@ -252,7 +254,7 @@ def downloads_thread(shared_obj):
 #subprocesses here
 
 
-def requests_subprocess(shared_queue, page_range, completion_mark):
+def requests_subprocess(shared_queue : multiprocessing.Queue, page_range : int, completion_mark):
     
     for i in page_range:
         tasks_to_push = get_request(i)
@@ -264,7 +266,7 @@ def requests_subprocess(shared_queue, page_range, completion_mark):
     
 
 
-def downloads_subprocess(shared_queue, completion_mark):
+def downloads_subprocess(shared_queue : multiprocessing.Queue, completion_mark):
     #pool = ThreadPool(processes = threads)
     
     shared_obj = {
@@ -273,39 +275,13 @@ def downloads_subprocess(shared_queue, completion_mark):
     }
 
     pool_fn = partial(downloads_thread, shared_obj)
-    pool = ConcurrentThreadPool(threads_per_process, pool_fn, ())
+    pool = utils.ConcurrentThreadPool(threads_per_process, pool_fn, ())
 
     pool.execute()
         
 
 
-class ConcurrentThreadPool:
-    def __init__(self, threads_n,task_fn,args):
-        self.threads = []
-        for i in range(threads_n):
-            self.threads.append(threading.Thread(target = task_fn, args = args))
-        
-    def execute(self):
-        for i in range(len(self.threads)):
-            self.threads[i].start()
-        
-        
-        for i in range(len(self.threads)):
-            self.threads[i].join()
 
-class ConcurrentProcessPool:
-    def __init__(self, process_n,task_fn,args):
-        self.processes = []
-        for i in range(process_n):
-            self.processes.append(multiprocessing.Process(target = task_fn, args = args))
-        
-    def execute(self):
-        for i in range(len(self.processes)):
-            self.processes[i].start()
-        
-        
-        for i in range(len(self.processes)):
-            self.processes[i].join()
 
 
 
@@ -323,7 +299,7 @@ if __name__ ==  "__main__":
     req_p = multiprocessing.Process(target = requests_subprocess, args = (queue, page_range, comp_mark))
 
 
-    downloads_pool = ConcurrentProcessPool(processes, downloads_subprocess, args = (queue, comp_mark))
+    downloads_pool = utils.ConcurrentProcessPool(processes, downloads_subprocess, args = (queue, comp_mark))
     
 
     #it = range(0,processes)
