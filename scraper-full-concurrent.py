@@ -23,44 +23,55 @@ tag_score_order = "order%3Ascore"
 
 
 
-start = 1
-stop = 50
+PAGE_START = 1
+PAGE_STOP = 50
+PAGE_RANGE = range(PAGE_START, PAGE_STOP)
 
-threads_per_process = 32
-processes = 16
+THREADS_PER_PROCESS = 1
+PROCESSES_N = 1
 
-check_md5 = True
-strict_md5 = True
-known_only : bool = True
-save_api_cache : bool = True
-#sends requests using cached data
-load_from_cache : bool = False
-max_tasks = threads_per_process * processes * 2
+
+CHECK_MD5 = True
+STRICT_MD5 = True
+KNOWN_ONLY : bool = True
+SAVE_API_CACHE : bool = True
+LOAD_TASKS_FROM_CACHE : bool = False
+#only effective if previous is true
+SESSION_ID : str = "1678342904547157100"
+
+MAX_TASKS = THREADS_PER_PROCESS * PROCESSES_N * 2
 
 #cache format:
 #cache/session_time/tags.json
 #cache/session_time/page_index(200 posts/page assumed).json
 
-requests_check_cooldown = 5.0
+REQUESTS_CHECK_COOLDOWN = 5.0
 
-dirname = "anime-porn"
+ROOT_DIR_NAME = "anime-porn"
 
-cache_dir_name = "cache"
+CACHE_DIR_NAME = "cache"
 
-folder_split_count = 100
+FOLDER_SPLIT_COUNT = 100
 
-timeout_time = 3
-
-
-baseurl = "https://danbooru.donmai.us/posts.json?"
+REQUEST_TIMEOUT = 5
+QUEUE_TIMEOUT = 5
 
 
-cpath = ""
+BASE_URL = "https://danbooru.donmai.us/posts.json?"
+
+ROOT_DIR : str = "./" + ROOT_DIR_NAME + "/"
+
+STATE_COMPLETE : int = 1
+STATE_INCOMPLETE : int = 0
+
+
+CACHE_DIR = ROOT_DIR + CACHE_DIR_NAME + "/"
+
 
 #queuery info
 
-page_lim = 200
-tags = [
+MAX_ENTRIES_PER_PAGE = 200
+TAGS = [
     tag_score_order,
     "rating%3Aexplicit",
 
@@ -69,7 +80,7 @@ tags = [
 ]
 
 #constant lookup time
-known_extentions = {
+KNOWN_EXTENSIONS = {
     ".png" : True,
     ".jpg" : True,
     ".gif" : True, 
@@ -77,7 +88,7 @@ known_extentions = {
     ".zip" : True
 }
 
-def get_tags(tags):
+def parse_tags(tags):
     s = tags[0]
     for i in range(1, len(tags)):
         s += "+" + tags[i]
@@ -85,18 +96,15 @@ def get_tags(tags):
 
 
 
-qinfo = "limit=" + str(page_lim) + "&tags=" + get_tags(tags)
-url : str = baseurl + qinfo
-
-base_dir : str = "./" + dirname + "/"
-
-STATE_COMPLETE : int = 1
-STATE_INCOMPLETE : int = 0
+QUERY_INFO = "limit=" + str(MAX_ENTRIES_PER_PAGE) + "&tags=" + parse_tags(TAGS)
+TAGGED_BASE_URL : str = BASE_URL + QUERY_INFO
 
 
 
-cf = r"pKC9inHoylW0t4Ip4QecCiw7P6g0xmGWXjjRWWJNiKY-1653062338-0-150"
-headers = {
+
+
+CF_TOKEN = r"pKC9inHoylW0t4Ip4QecCiw7P6g0xmGWXjjRWWJNiKY-1653062338-0-150"
+REQ_HEADES = {
     "User-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0",
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
@@ -105,7 +113,7 @@ headers = {
     'TE': 'Trailers',
 }
 
-proxy = {
+PROXY = {
     "https" : "https://127.0.0.1:7890"
 }
 
@@ -125,28 +133,24 @@ class Task:
 
         #file name
         #42069666.png
-        self.fname : str = str(id) + self.extention
+        self.fname : str = str(self.id) + self.extention
 
         #relative path
-        #./dirname/.png/66/42069666.png
-        self.path : str = dir +                         \
+        #./root/.png/66/42069666.png
+        self.path : str = ROOT_DIR +                    \
             self.extention + "/"                        \
-            + str(self.id % folder_split_count) + "/"   \
+            + str(self.id % FOLDER_SPLIT_COUNT) + "/"   \
             + self.fname
     
     def is_valid(self) -> bool:
-        global known_extentions
-        if(known_only):
-            #if either false or none type
-            if(not known_extentions[self.extention]):
-                return False
+
         
         #if file does not exist, download
         if(not os.path.exists(self.path)):
             return True
         #if not doing checksum
         #assume that the file is complete
-        if(not check_md5):
+        if(not CHECK_MD5):
             return False
         #if checking md5
         #if checksum is incomplete, redownload
@@ -162,39 +166,58 @@ class Task:
 
 #state object, get task queue and completion status here
 class SharedState:
-    def __init__(self):
-        self.queue = multiprocessing.Queue(max_tasks)
+    def __init__(self, session_id : str):
+        self.queue = multiprocessing.Queue(MAX_TASKS)
         self.completion = multiprocessing.Value("i", STATE_INCOMPLETE)
+        self.session_id = session_id
+        self.cache_path = CACHE_DIR + session_id + "/"
         
 
     def is_complete(self) -> bool:
         if(self.completion.value == STATE_COMPLETE and self.queue.empty()):
             return True
         return False
+    
+#returns json-loaded dict from api, or none
+def get_data(page : int, shared_info : SharedState) -> dict:
 
 
-def get_request(page : int):
-    global url
-    global known_extentions
     print("Requesting for tasks...")
-    url_paged = url + "&page=" + str(page)
+    url_paged = TAGGED_BASE_URL + "&page=" + str(page)
+    success : bool = False
+    while(not success):
 
-    try:
-        resp = requests.get(url = url_paged)
+        try:
+            resp = requests.get(url = url_paged)
+            if(resp.status_code != 200):
+                raise("L request status is not 200")
+            
+        except:
+            print("REQUESTS PROCESS: Tasks request failed. Retrying after timeout of " + str(REQUEST_TIMEOUT) + "s...")
+            time.sleep(REQUEST_TIMEOUT)
+            
+        #there is 100% a cleaner way to do this but im lazy so 2 bad
         if(resp.status_code != 200):
-            raise("L request status is not 200")
+            print("REQUESTS PROCESS: Tasks request failed. Retrying after timeout of " + str(REQUEST_TIMEOUT) + "s...")
+            time.sleep(REQUEST_TIMEOUT)
+            continue
         
         data = resp.json()
-    except:
-        print("REQUESTS PROCESS: Tasks request failed. Retrying after timeout of " + str(timeout_time) + "s...")
-        time.sleep(timeout_time)
+
+        if(SAVE_API_CACHE):
+            with open(shared_info.cache_path + str(page) + ".json", "w+") as f:
+                f.write(json.dumps(data))
+        print("REQUESTS PROCESS: New tasks requested.")
+        return data
         
-        return []
-        
+            
+
+    
+
+#response data parsing
+def data_to_tasks(data : dict) -> list:
+
     res = []
-    if(save_api_cache):
-        with open(cpath + "/" + str(page), "w") as f:
-            f.write(json.dumps(data))
     
     #TODO: implement load from cache
 
@@ -202,24 +225,31 @@ def get_request(page : int):
         #if no id
         if(not dat.__contains__("id")):
             continue
+        #if no extension
+        if(not dat.__contains__("file_ext")):
+            continue
         #if no cdn url
         url = utils.get_cdn_url(dat)
+        id = dat["id"]
+        ext = "." + dat["file_ext"]
+        if(KNOWN_ONLY):
+            #if either false or none type
+            if(not KNOWN_EXTENSIONS.__contains__(ext)):
+                continue
 
         if(url == None):
             continue
 
-        task : Task = Task(url, dat["id"], dat["ext"])
+        task : Task = Task(url, id, ext)
         #optional md5 checksum
-        if(check_md5 and dat.__contains__("md5")):
+        if(CHECK_MD5 and dat.__contains__("md5")):
             task.md5 = dat["md5"]
         #if no md5 in strict mode
-        if(strict_md5 and (not dat.__contains__("md5"))):
+        if(STRICT_MD5 and (not dat.__contains__("md5"))):
             continue
-            
-
-
-        print("REQUESTS PROCESS: New tasks requested.")
-        return res
+        res.append(task)
+        
+    return res
 
     
 
@@ -230,7 +260,7 @@ def save_image(task : Task):
     
 
     try:
-        res = requests.get(url = task.url ,headers=headers, stream=True)
+        res = requests.get(url = task.url ,headers=REQ_HEADES, stream=True)
         print("Downloading " + task.fname)
 
         if res.status_code == 200:
@@ -239,7 +269,7 @@ def save_image(task : Task):
                 shutil.copyfileobj(res.raw, f)
             
             
-            if(strict_md5):
+            if(STRICT_MD5):
                 if(not utils.check_hash(task.path, task.md5)):
                     print("File hash incorrect. Redownloading...")
                     del res
@@ -259,49 +289,56 @@ def save_image(task : Task):
         print("Downloading of " + task.fname + " aborted as an exception is thrown.")
         del res
         return False
+    
 
+
+#==============================================MKDIRS======================================
 #makes subfolders of extension
 def mkdir():
-    for k in known_extentions:
-        if(not os.path.isdir(base_dir + k)):
-            os.mkdir(base_dir + k)
-        for i in range(folder_split_count):
-            cdir = base_dir + k + "/" + str(i)
+    for k in KNOWN_EXTENSIONS:
+        if(not os.path.isdir(ROOT_DIR + k)):
+            os.mkdir(ROOT_DIR + k)
+        for i in range(FOLDER_SPLIT_COUNT):
+            cdir = ROOT_DIR + k + "/" + str(i)
             if(not os.path.isdir(cdir)):
                 os.mkdir(cdir)
 
 #makes the anime porn folder
 def mkrootdir():
-    if(not os.path.isdir(dirname)):
-        os.mkdir(dirname)
+    if(not os.path.isdir(ROOT_DIR)):
+        os.mkdir(ROOT_DIR)
 
-def mkcachedir():
-    global cpath
-    cbase = base_dir + cache_dir_name
-    if(not os.path.isdir(cbase)):
-        os.mkdir(cbase)
+def mkcachedir(session_dir : str):
+    
+    if(not os.path.isdir(CACHE_DIR)):
+        os.mkdir(CACHE_DIR)
 
-    cpath = cbase + "/" + str(datetime.datetime())
-    if(not os.path.isdir(cpath)):
-        os.mkdir(cpath)
+    if(not os.path.isdir(session_dir)):
+        os.mkdir(session_dir)
+
+    
 
     #create tags.json
-    global tags
-    with open(cpath + "/tags.json", "w") as f:
-        f.write(json.dumps(tags))
-    
-    
-     
-        
-        
+    with open(session_dir + "/tags.json", "w") as f:
+        f.write(json.dumps(TAGS))
 
+#==============================================END MKDIRS======================================
+
+#=========================================THREAD AND PROCESS PROCS======================================
 
 def downloads_thread(shared_obj : SharedState):
     
     #only stop if both completion set to 1 AND queue is empty
     while(not shared_obj.is_complete()):
-        ctask = shared_obj.queue.get()
+
+        try:
+            ctask = shared_obj.queue.get(True, QUEUE_TIMEOUT)
         #check if task is valid
+        except:
+            print("DOWNLOADS_THREAD: Queue is currently empty, retrying after 5s...")
+            time.sleep(5)
+            continue
+        
         ctask.initialize_props()
         #if task is invalid, dont start download
         if(not ctask.is_valid()):
@@ -311,6 +348,7 @@ def downloads_thread(shared_obj : SharedState):
         #retry if failed
         while(not save_image(ctask)):
             print("Error is thrown while downloading. Retrying...")
+        
         
         del ctask
     
@@ -322,11 +360,20 @@ def downloads_thread(shared_obj : SharedState):
 #subprocesses here
 
 
-def requests_subprocess(page_range : range, shared_obj : SharedState):
-    for i in page_range:
-        tasks_to_push = get_request(i)
-        for j in range(len(tasks_to_push)):
-            shared_obj.queue.put(tasks_to_push[j])
+def requests_subprocess(shared_obj : SharedState):
+    for i in PAGE_RANGE:
+        resp_data = None
+        if(LOAD_TASKS_FROM_CACHE):
+            with open(shared_obj.cache_path + str(i) + ".json", "r") as f:
+                resp_data = json.loads(f.read())
+        else:
+            resp_data = get_data(i, shared_obj)
+
+        tasks_to_push = data_to_tasks(resp_data)
+        assert(tasks_to_push != None)
+
+        for task in tasks_to_push:
+            shared_obj.queue.put(task)
     
     #mark completion when finished executing
     shared_obj.completion.value = 1
@@ -335,30 +382,33 @@ def requests_subprocess(page_range : range, shared_obj : SharedState):
 
 def downloads_subprocess(shared_obj : SharedState):
     #pool = ThreadPool(processes = threads) 
-
+    
     pool_fn = partial(downloads_thread, shared_obj)
-    pool = utils.ConcurrentThreadPool(threads_per_process, pool_fn, ())
+    pool = utils.ConcurrentThreadPool(THREADS_PER_PROCESS, pool_fn, ())
 
     pool.execute()
         
 
-
-
-
-
+#========================================MAIN======================================
 
 if __name__ ==  "__main__":
 
+    session_id : str = str(time.time_ns())
+    if(LOAD_TASKS_FROM_CACHE):
+        session_id = SESSION_ID
+        
+    shared_obj = SharedState(session_id)
     mkrootdir()
+
+    mkcachedir(shared_obj.cache_path)
     mkdir()
-
-    page_range = range(start,stop)
-
-    shared_obj = SharedState()
-
-    req_p = multiprocessing.Process(target = requests_subprocess, args = (page_range, shared_obj))
     
-    downloads_pool = utils.ConcurrentProcessPool(processes, downloads_subprocess, args = (shared_obj,))
+
+    
+
+    req_p = multiprocessing.Process(target = requests_subprocess, args = (shared_obj,))
+    
+    downloads_pool = utils.ConcurrentProcessPool(PROCESSES_N, downloads_subprocess, args = (shared_obj,))
     
 
     #it = range(0,processes)
