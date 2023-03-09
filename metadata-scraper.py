@@ -12,7 +12,7 @@ PAGE_STOP = 2
 PAGE_RANGE = range(PAGE_START, PAGE_STOP + 1)
 
 
-THREADS_N = 16
+THREADS_N = 2
 
 
 
@@ -86,7 +86,7 @@ TAGGED_BASE_URL : str = BASE_URL + QUERY_INFO
 def get_data(path : str, page : int) -> dict:
 
 
-    print("Requesting for tasks...")
+    print("Requesting for tasks on page: " + str(page))
     url_paged = TAGGED_BASE_URL + "&page=" + str(page)
     success : bool = False
     while(not success):
@@ -106,11 +106,12 @@ def get_data(path : str, page : int) -> dict:
             time.sleep(REQUEST_TIMEOUT)
             continue
         
-        data = resp.text()
+        data = resp.text
 
-        if(SAVE_API_CACHE):
-            with open(path + str(page) + ".json", "w+") as f:
-                f.write(data)
+        
+        with open(path + str(page) + ".json", "w+") as f:
+            f.write(data)
+
         print("REQUESTS THREAD: New tasks requested.")
         return data
     

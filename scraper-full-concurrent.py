@@ -182,7 +182,7 @@ class SharedState:
 def get_data(page : int, shared_info : SharedState) -> dict:
 
 
-    print("Requesting for tasks...")
+    print("Requesting for tasks on page: " + str(page))
     url_paged = TAGGED_BASE_URL + "&page=" + str(page)
     success : bool = False
     while(not success):
