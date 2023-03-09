@@ -8,11 +8,11 @@ import json
 #only downloads the api image metadata, multithreaded
 
 PAGE_START = 1
-PAGE_STOP = 2
+PAGE_STOP = 500
 PAGE_RANGE = range(PAGE_START, PAGE_STOP + 1)
 
 
-THREADS_N = 2
+THREADS_N = 4
 
 
 
@@ -67,7 +67,7 @@ KNOWN_EXTENSIONS = {
     ".jpg" : True,
     ".gif" : True, 
     ".mp4" : True,
-    ".zip" : True
+    ".zip" : True,
 }
 
 def parse_tags(tags):
@@ -99,6 +99,7 @@ def get_data(path : str, page : int) -> dict:
         except:
             print("REQUESTS THREAD: Tasks request failed. Retrying after timeout of " + str(REQUEST_TIMEOUT) + "s...")
             time.sleep(REQUEST_TIMEOUT)
+            continue
             
         #there is 100% a cleaner way to do this but im lazy so 2 bad
         if(resp.status_code != 200):
@@ -106,10 +107,10 @@ def get_data(path : str, page : int) -> dict:
             time.sleep(REQUEST_TIMEOUT)
             continue
         
-        data = resp.text
+        data = resp.content
 
         
-        with open(path + str(page) + ".json", "w+") as f:
+        with open(path + str(page) + ".json", "wb") as f:
             f.write(data)
 
         print("REQUESTS THREAD: New tasks requested.")
