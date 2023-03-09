@@ -60,7 +60,8 @@ known_extentions = {
     ".png" : True,
     ".jpg" : True,
     ".gif" : True, 
-    ".mp4" : True
+    ".mp4" : True,
+    ".zip" : True
 }
 
 def get_tags(tags):
@@ -76,6 +77,8 @@ url : str = baseurl + qinfo
 
 dir : str = "./" + dirname + "/"
 
+STATE_COMPLETE : int = 1
+STATE_INCOMPLETE : int = 0
 
 
 
@@ -143,6 +146,18 @@ class Task:
 
         
 
+
+#state object, get task queue and completion status here
+class SharedState:
+    def __init__(self):
+        self.queue = multiprocessing.Queue(max_tasks)
+        self.completion = multiprocessing.Value("i", STATE_INCOMPLETE)
+        
+
+    def is_complete(self) -> bool:
+        if(self.completion.value == STATE_COMPLETE and self.queue.empty()):
+            return True
+        return False
 
 
 def get_request(page):
@@ -223,7 +238,7 @@ def save_image(task : Task):
 
     except:
         
-        print("Downloading of" + task.fname + "aborted as an exception is thrown.")
+        print("Downloading of " + task.fname + " aborted as an exception is thrown.")
         del res
         return False
 
@@ -243,11 +258,11 @@ def mkrootdir():
         os.mkdir(dirname)
 
 
-def downloads_thread(shared_obj):
+def downloads_thread(shared_obj : SharedState):
     
     #only stop if both completion set to 1 AND queue is empty
-    while(shared_obj["completion"].value == 0 or shared_obj["queue"].empty() == False):
-        ctask = shared_obj["queue"].get()
+    while(not shared_obj.is_complete()):
+        ctask = shared_obj.queue.get()
         #check if task is valid
         ctask.initialize_props()
         #if task is invalid, dont start download
@@ -269,25 +284,19 @@ def downloads_thread(shared_obj):
 #subprocesses here
 
 
-def requests_subprocess(shared_queue : multiprocessing.Queue, page_range : int, completion_mark):
-    
+def requests_subprocess(page_range : range, shared_obj : SharedState):
     for i in page_range:
         tasks_to_push = get_request(i)
         for j in range(len(tasks_to_push)):
-            shared_queue.put(tasks_to_push[j])
+            shared_obj.queue.put(tasks_to_push[j])
     
     #mark completion when finished executing
-    completion_mark.value = 1
+    shared_obj.completion.value = 1
     
 
 
-def downloads_subprocess(shared_queue : multiprocessing.Queue, completion_mark):
-    #pool = ThreadPool(processes = threads)
-    
-    shared_obj = {
-        "queue" : shared_queue,
-        "completion" : completion_mark
-    }
+def downloads_subprocess(shared_obj : SharedState):
+    #pool = ThreadPool(processes = threads) 
 
     pool_fn = partial(downloads_thread, shared_obj)
     pool = utils.ConcurrentThreadPool(threads_per_process, pool_fn, ())
@@ -304,17 +313,14 @@ if __name__ ==  "__main__":
 
     mkrootdir()
     mkdir()
+
     page_range = range(start,stop)
 
+    shared_obj = SharedState()
+
+    req_p = multiprocessing.Process(target = requests_subprocess, args = (page_range, shared_obj))
     
-    comp_mark = multiprocessing.Value("i", 0)
-
-    queue = multiprocessing.Queue(maxsize = max_tasks)
-
-    req_p = multiprocessing.Process(target = requests_subprocess, args = (queue, page_range, comp_mark))
-
-
-    downloads_pool = utils.ConcurrentProcessPool(processes, downloads_subprocess, args = (queue, comp_mark))
+    downloads_pool = utils.ConcurrentProcessPool(processes, downloads_subprocess, args = (shared_obj,))
     
 
     #it = range(0,processes)

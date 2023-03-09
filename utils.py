@@ -3,6 +3,8 @@ import multiprocessing
 import threading
 
 
+
+"""
 #input: file url
 #returns extention of file
 def find_ext(url : str):
@@ -17,9 +19,10 @@ def find_ext(url : str):
         else:
             i -= 1
     return None
+"""
 
 #md5 hash check, returns true if both are the same, false otherwise
-def check_hash(fname, hash):
+def check_hash(fname : str, hash : str):
     fhash = ""
     with open(fname, "rb") as f:
         data = f.read()
@@ -64,3 +67,5 @@ class ConcurrentProcessPool:
         
         for i in range(len(self.processes)):
             self.processes[i].join()
+
+
