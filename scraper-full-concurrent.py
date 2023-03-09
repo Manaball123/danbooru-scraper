@@ -8,8 +8,10 @@ import shutil
 import os
         
 import multiprocessing
+import datetime
 import threading
 import time
+import json
 
 
 
@@ -30,11 +32,20 @@ processes = 16
 check_md5 = True
 strict_md5 = True
 known_only : bool = True
+save_api_cache : bool = True
+#sends requests using cached data
+load_from_cache : bool = False
 max_tasks = threads_per_process * processes * 2
+
+#cache format:
+#cache/session_time/tags.json
+#cache/session_time/page_index(200 posts/page assumed).json
 
 requests_check_cooldown = 5.0
 
 dirname = "anime-porn"
+
+cache_dir_name = "cache"
 
 folder_split_count = 100
 
@@ -43,6 +54,8 @@ timeout_time = 3
 
 baseurl = "https://danbooru.donmai.us/posts.json?"
 
+
+cpath = ""
 
 #queuery info
 
@@ -75,7 +88,7 @@ def get_tags(tags):
 qinfo = "limit=" + str(page_lim) + "&tags=" + get_tags(tags)
 url : str = baseurl + qinfo
 
-dir : str = "./" + dirname + "/"
+base_dir : str = "./" + dirname + "/"
 
 STATE_COMPLETE : int = 1
 STATE_INCOMPLETE : int = 0
@@ -160,7 +173,7 @@ class SharedState:
         return False
 
 
-def get_request(page):
+def get_request(page : int):
     global url
     global known_extentions
     print("Requesting for tasks...")
@@ -179,6 +192,11 @@ def get_request(page):
         return []
         
     res = []
+    if(save_api_cache):
+        with open(cpath + "/" + str(page), "w") as f:
+            f.write(json.dumps(data))
+    
+    #TODO: implement load from cache
 
     for dat in data:
         #if no id
@@ -245,10 +263,10 @@ def save_image(task : Task):
 #makes subfolders of extension
 def mkdir():
     for k in known_extentions:
-        if(not os.path.isdir(dir + k)):
-            os.mkdir(dir + k)
+        if(not os.path.isdir(base_dir + k)):
+            os.mkdir(base_dir + k)
         for i in range(folder_split_count):
-            cdir = dir + k + "/" + str(i)
+            cdir = base_dir + k + "/" + str(i)
             if(not os.path.isdir(cdir)):
                 os.mkdir(cdir)
 
@@ -256,6 +274,26 @@ def mkdir():
 def mkrootdir():
     if(not os.path.isdir(dirname)):
         os.mkdir(dirname)
+
+def mkcachedir():
+    global cpath
+    cbase = base_dir + cache_dir_name
+    if(not os.path.isdir(cbase)):
+        os.mkdir(cbase)
+
+    cpath = cbase + "/" + str(datetime.datetime())
+    if(not os.path.isdir(cpath)):
+        os.mkdir(cpath)
+
+    #create tags.json
+    global tags
+    with open(cpath + "/tags.json", "w") as f:
+        f.write(json.dumps(tags))
+    
+    
+     
+        
+        
 
 
 def downloads_thread(shared_obj : SharedState):
