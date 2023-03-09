@@ -97,7 +97,7 @@ def get_data(path : str, page : int) -> dict:
                 raise("L request status is not 200")
             
         except:
-            print("REQUESTS PROCESS: Tasks request failed. Retrying after timeout of " + str(REQUEST_TIMEOUT) + "s...")
+            print("REQUESTS THREAD: Tasks request failed. Retrying after timeout of " + str(REQUEST_TIMEOUT) + "s...")
             time.sleep(REQUEST_TIMEOUT)
             
         #there is 100% a cleaner way to do this but im lazy so 2 bad
