@@ -24,20 +24,20 @@ tag_score_order = "order%3Ascore"
 
 
 PAGE_START = 1
-PAGE_STOP = 50
-PAGE_RANGE = range(PAGE_START, PAGE_STOP)
+PAGE_STOP = 2
+PAGE_RANGE = range(PAGE_START, PAGE_STOP + 1)
 
-THREADS_PER_PROCESS = 1
-PROCESSES_N = 1
+THREADS_PER_PROCESS = 32
+PROCESSES_N = 16
 
 
 CHECK_MD5 = True
 STRICT_MD5 = True
 KNOWN_ONLY : bool = True
 SAVE_API_CACHE : bool = True
-LOAD_TASKS_FROM_CACHE : bool = False
+LOAD_TASKS_FROM_CACHE : bool = True
 #only effective if previous is true
-SESSION_ID : str = "1678342904547157100"
+SESSION_ID : str = "1678343863044889500"
 
 MAX_TASKS = THREADS_PER_PROCESS * PROCESSES_N * 2
 
@@ -155,7 +155,7 @@ class Task:
         #if checking md5
         #if checksum is incomplete, redownload
         if(not utils.check_hash(self.path, self.md5)):
-            print(self.fname + " exists but was not fully downloaded, redownloading...")
+            print(self.fname + " exists but has an incorrect file hash, redownloading...")
             return True
         #if checksum is complete
         print(self.fname + " exists, aborting download")
@@ -271,23 +271,23 @@ def save_image(task : Task):
             
             if(STRICT_MD5):
                 if(not utils.check_hash(task.path, task.md5)):
-                    print("File hash incorrect. Redownloading...")
-                    del res
+                    print("File hash of " + task.fname +" is incorrect. Redownloading...")
+                    
                     return False
             
             print('File sucessfully Downloaded: ', task.fname)
-            del res
+            
             return True
         else:
             print('File Couldn\'t be retrieved, Error:')
             print(res)
-            del res
+            
             return False
 
     except:
         
         print("Downloading of " + task.fname + " aborted as an exception is thrown.")
-        del res
+        
         return False
     
 
@@ -335,14 +335,13 @@ def downloads_thread(shared_obj : SharedState):
             ctask = shared_obj.queue.get(True, QUEUE_TIMEOUT)
         #check if task is valid
         except:
-            print("DOWNLOADS_THREAD: Queue is currently empty, retrying after 5s...")
+            #print("DOWNLOADS_THREAD: Queue is currently empty, retrying after 5s...")
             time.sleep(5)
             continue
         
         ctask.initialize_props()
         #if task is invalid, dont start download
         if(not ctask.is_valid()):
-            del ctask
             continue
         #print("Exectuting task: " + str(ctask["tid"]))
         #retry if failed
@@ -350,7 +349,7 @@ def downloads_thread(shared_obj : SharedState):
             print("Error is thrown while downloading. Retrying...")
         
         
-        del ctask
+    
     
     print("Download complete. Closing thread..")
 
