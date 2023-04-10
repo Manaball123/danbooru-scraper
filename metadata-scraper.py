@@ -8,7 +8,7 @@ import json
 #only downloads the api image metadata, multithreaded
 
 PAGE_START = 1
-PAGE_STOP = 500
+PAGE_STOP = 256
 PAGE_RANGE = range(PAGE_START, PAGE_STOP + 1)
 
 
@@ -86,7 +86,7 @@ TAGGED_BASE_URL : str = BASE_URL + QUERY_INFO
 def get_data(path : str, page : int) -> dict:
 
 
-    print("Requesting for tasks on page: " + str(page))
+    print("REQUESTS THREAD: Requesting for tasks on page: " + str(page))
     url_paged = TAGGED_BASE_URL + "&page=" + str(page)
     success : bool = False
     while(not success):
@@ -106,15 +106,19 @@ def get_data(path : str, page : int) -> dict:
             print("REQUESTS THREAD: Tasks request failed. Retrying after timeout of " + str(REQUEST_TIMEOUT) + "s...")
             time.sleep(REQUEST_TIMEOUT)
             continue
-        
-        data = resp.content
+        data = None
+        try:
+            data = resp.json()
+        except:
+            print("REQUESTS THREAD: Failed to parse data. Re-requesting data.")
+            continue
 
         
         with open(path + str(page) + ".json", "wb") as f:
-            f.write(data)
+            f.write(json.dumps(data))
 
-        print("REQUESTS THREAD: New tasks requested.")
-        return data
+        print("REQUESTS THREAD: Successfully requested data.")
+        break
     
 
 #makes the anime porn folder
